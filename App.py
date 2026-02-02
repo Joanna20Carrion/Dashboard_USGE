@@ -12,7 +12,7 @@ import unicodedata
 st.set_page_config(page_title="Especialistas_Tareas", layout="wide")
 st.title("SISTEMAS DE PROCESOS USGE")
 
-tab_tareas, tab_procedimientos, tab_supervisores, tab_empresas_procedimientos, tab_SUP2500037 = st.tabs(["Tareas", "Procedimientos","Supervisores","Empresas","SUP2500037"])
+tab_tareas, tab_procedimientos, tab_supervisores, tab_empresas_procedimientos, tab_SUP2500037, tab_SUP2400128, tab_SUP2400205, tab_SUP2500029, tab_SUP2400028 = st.tabs(["Tareas", "Procedimientos","Supervisores","Empresas","SUP2500037","SUP2400128","SUP2400205","SUP2500029","SUP2400028"])
 
 with tab_tareas:
     # =========================
@@ -1813,24 +1813,36 @@ with tab_SUP2500037:
     # OJO: APOYO puede no existir -> se rellena vacío
     MAP_DEST_TO_SRC_ALTS = {
         "ALCANCE SEGÚN CONTRATO": ["Alcance según contrato"],
+        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema", "Procedimiento / Tema: Detalle", "Detalle"],
+        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Actividad a realizar", "Procedimiento / Tema: Actividad a realizar"],
+        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": [
+            "Unidad operativa a Supervisar / Fiscalizar: Empresa",
+            "Unidad operativa a Supervisar: Agente Supervisado",
+            "Agente Supervisado",
+            "Empresa",
+        ],
     
-        # Estas son las que te salían None (deben coincidir con headers del Sheet)
-        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema: Detalle", "Detalle"],
-        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Procedimiento / Tema: Actividad a realizar", "Actividad a realizar"],
-        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": ["Unidad operativa a Supervisar: Agente Supervisado", "Agente Supervisado"],
+        # Opcionales:
         "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
         "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
         "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
-        "FECHA: ENTREGABLE": ["Fecha: Entregable", "Entregable"],
-    
-        # Otros campos
-        "ENTREGABLES": ["Entregables", "Entregable"],  # a veces el 2do entregable también dice "Entregable"
+        "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
+        "ENTREGABLES": ["Observaciones", "Entregables", "Entregable"],
         "ESPECIALISTA": ["Especialista"],
         "SUPERVISOR": ["Supervisor"],
-        "APOYO": ["Apoyo"],  # opcional
+        "APOYO": ["Apoyo"], 
+    }
+        
+    OPTIONAL_DESTS = {
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE",
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO",
+        "FECHA: EJECUCIÓN",
+        "ESPECIALISTA",
+        "SUPERVISOR",
+        "APOYO",
     }
     
-    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k != "APOYO"]
+    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k not in OPTIONAL_DESTS]
     
     # Columnas META en el Sheet (asegúrate que existan así en SUP2500037)
     META = {
@@ -1886,10 +1898,10 @@ with tab_SUP2500037:
                 if k in found_local and len(found_local[k]) > 0:
                     chosen = found_local[k].pop(0)
                     break
-    
-            if chosen is None and dest != "APOYO":
+            
+            if chosen is None and dest not in OPTIONAL_DESTS:
                 missing_required.append((dest, alts))
-    
+                
             dest_to_col[dest] = chosen  # puede ser None (APOYO)
     
         return dest_to_col, missing_required
@@ -2276,3 +2288,2175 @@ with tab_SUP2500037:
                     st.write(fallos)
 
                 st.rerun()
+
+# =========================
+# TAB: SUP2400128  
+# =========================
+with tab_SUP2400128:
+    st.header("Contrato SUP2400128")
+
+    SHEET_NAME_SUP = "SUP2400128"
+
+    # =========================
+    # LEER GOOGLE SHEET (CSV público)
+    # =========================
+    sheet_sup = urllib.parse.quote(SHEET_NAME_SUP)
+    url_sup = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_sup}"
+
+    dfsup = pd.read_csv(url_sup, dtype=str)
+    dfsup.columns = (
+        dfsup.columns.astype(str)
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.upper()
+    )
+    dfsup = dfsup.loc[:, ~dfsup.columns.str.startswith("UNNAMED")]
+
+    if "ID_SUP" not in dfsup.columns:
+        st.error("La hoja 'SUP2400128' debe tener una columna 'ID_SUP' (clave única).")
+        st.stop()
+
+    dfsup["ID_SUP"] = dfsup["ID_SUP"].astype(str).str.strip()
+    dfsup = dfsup[dfsup["ID_SUP"] != ""]
+    dfsup = dfsup.fillna("")
+
+    # =========================
+    # HELPERS
+    # =========================
+    def pick_col(df, candidates):
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    def _try_int(x):
+        try:
+            return int(str(x).strip())
+        except:
+            return None
+
+    def clean_opts(s: pd.Series):
+        s = s.dropna().astype(str).str.strip().replace("", np.nan).dropna()
+        nums = pd.to_numeric(s, errors="coerce")
+        if nums.notna().all() and len(nums) > 0:
+            order = sorted(nums.unique().tolist())
+            out = []
+            for v in order:
+                if float(v).is_integer():
+                    out.append(str(int(v)))
+                else:
+                    out.append(str(v))
+            return out
+        return sorted(s.unique().tolist())
+
+    def _eq(df, col, val):
+        return df[col].astype(str).str.strip() == str(val).strip()
+
+    # =========================
+    # FILTRO (Año, Mes, Periodo, Especialista, Supervisor, Apoyo)
+    # =========================
+    st.subheader("FILTRO")
+
+    col_anio = pick_col(dfsup, ["AÑO", "ANIO", "ANO", "YEAR"])
+    col_mes = pick_col(dfsup, ["MES", "MONTH"])
+    col_periodo = pick_col(dfsup, ["PERIODO", "PERÍODO", "PERIODO.", "PERÍODO."])
+    col_esp = pick_col(dfsup, ["ESPECIALISTA"])
+    col_sup = pick_col(dfsup, ["SUPERVISOR", "NOMBRE COMPLETO DE SUPERVISOR", "NOMBRE COMPLETO DEL SUPERVISOR"])
+    col_apoyo = pick_col(dfsup, ["APOYO"])
+
+    opts_anio = ["TODOS"] + (clean_opts(dfsup[col_anio]) if col_anio else [])
+    opts_mes = ["TODOS"] + (clean_opts(dfsup[col_mes]) if col_mes else [])
+    opts_periodo = ["TODOS"] + (clean_opts(dfsup[col_periodo]) if col_periodo else [])
+    opts_esp = ["TODOS"] + (clean_opts(dfsup[col_esp]) if col_esp else [])
+    opts_sup = ["TODOS"] + (clean_opts(dfsup[col_sup]) if col_sup else [])
+    opts_apoyo = ["TODOS"] + (clean_opts(dfsup[col_apoyo]) if col_apoyo else [])
+
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+
+    with c1:
+        f_anio = st.selectbox("Año", opts_anio, key="f_sup2400128_anio", disabled=(col_anio is None))
+    with c2:
+        f_mes = st.selectbox("Mes", opts_mes, key="f_sup2400128_mes", disabled=(col_mes is None))
+    with c3:
+        f_periodo = st.selectbox("Periodo", opts_periodo, key="f_sup2400128_periodo", disabled=(col_periodo is None))
+
+    with c4:
+        f_esp = st.selectbox("Especialista", opts_esp, key="f_sup2400128_esp", disabled=(col_esp is None))
+    with c5:
+        f_supervisor = st.selectbox("Supervisor", opts_sup, key="f_sup2400128_supervisor", disabled=(col_sup is None))
+    with c6:
+        f_apoyo = st.selectbox("Apoyo", opts_apoyo, key="f_sup2400128_apoyo", disabled=(col_apoyo is None))
+
+    dfsup_f = dfsup.copy()
+    if col_anio and f_anio != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_anio, f_anio)]
+    if col_mes and f_mes != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_mes, f_mes)]
+    if col_periodo and f_periodo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_periodo, f_periodo)]
+    if col_esp and f_esp != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_esp, f_esp)]
+    if col_sup and f_supervisor != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_sup, f_supervisor)]
+    if col_apoyo and f_apoyo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_apoyo, f_apoyo)]
+    
+    # =========================
+    # CARGA DESDE EXCEL (XLSX) -> AGREGA FILAS A SUP2400128
+    # =========================
+    st.divider()
+    st.subheader("CARGAR EXCEL (.xlsx) Y AGREGAR FILAS")
+
+    # INPUTS (meta)
+    anio_up = st.selectbox("AÑO", list(range(2025, 2036)), index=0, key="up_sup2400128_anio")
+    mes_up = st.selectbox(
+        "MES",
+        ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"],
+        key="up_sup2400128_mes",
+    )
+    periodo_up = st.text_input("PERIODO", key="up_sup2400128_periodo")
+
+    CONTRATO_AUTO = "SUP2400128"
+    EST_AUTO = "Green Electricity Engineering Corporation Sucursal del Perú"
+
+    st.text_input("CONTRATO", value=CONTRATO_AUTO, disabled=False, key="up_sup2400128_contrato")
+    st.text_input("EST", value=EST_AUTO, disabled=False, key="up_sup2400128_est")
+
+    uploaded = st.file_uploader("Sube el Excel (.xlsx)", type=["xlsx"], key="up_sup2400128_file")
+    
+    HEADER_ROW_MAIN = 13
+    HEADER_ROW_FALLBACK = 12
+    DATA_START_ROW = 14
+
+    # DESTINO = headers del SHEET (SUP2300128) | ORIGEN = headers del Excel subido
+    MAP_DEST_TO_SRC_ALTS = {
+        "ALCANCE SEGÚN CONTRATO": ["Alcance según contrato"],
+        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema", "Procedimiento / Tema: Detalle", "Detalle"],
+        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Actividad a realizar", "Procedimiento / Tema: Actividad a realizar"],
+        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": [
+            "Unidad operativa a Supervisar / Fiscalizar: Empresa",
+            "Unidad operativa a Supervisar: Agente Supervisado",
+            "Agente Supervisado",
+            "Empresa",
+        ],
+    
+        # Opcionales:
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
+        "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
+        "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
+        "ENTREGABLES": ["Observaciones", "Entregables", "Entregable"],
+        "ESPECIALISTA": ["Especialista"],
+        "SUPERVISOR": ["Supervisor"],
+        "APOYO": ["Apoyo"], 
+    }
+    
+    OPTIONAL_DESTS = {
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE",
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO",
+        "FECHA: EJECUCIÓN",
+        "ESPECIALISTA",
+        "SUPERVISOR",
+        "APOYO",
+    }
+    
+    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k not in OPTIONAL_DESTS] 
+
+    META = {
+        "AÑO": lambda: safe_str(anio_up),
+        "MES": lambda: safe_str(mes_up),
+        "PERIODO": lambda: safe_str(periodo_up),
+        "CONTRATO": lambda: CONTRATO_AUTO,
+        "EST": lambda: EST_AUTO,
+    }
+
+    def excel_to_rows(file_bytes: bytes):
+        wb = load_workbook(BytesIO(file_bytes), data_only=True)
+
+        best_ws = None
+        best_found = None
+        best_score = -1
+        for ws in wb.worksheets:
+            found = build_found(ws)
+            sc = score_sheet(found)
+            if sc > best_score:
+                best_score = sc
+                best_ws = ws
+                best_found = found
+
+        if best_ws is None or best_score < max(4, len(REQUIRED_DESTS) // 2):
+            raise ValueError("No pude identificar la hoja correcta (encabezados no coinciden en ninguna hoja).")
+
+        dest_to_col, missing_required = resolve_columns(best_found)
+        if missing_required:
+            msg = "Faltan encabezados requeridos en el Excel subido:\n"
+            for dest, alts in missing_required:
+                msg += f"- {dest} (busqué: {alts})\n"
+            raise ValueError(msg)
+
+        diag = []
+        for col in range(1, best_ws.max_column + 1):
+            ht = header_text(best_ws, col)
+            if ht:
+                diag.append({"COL": col, "HEADER_DETECTADO": ht})
+        diag_df = pd.DataFrame(diag)
+
+        data = []
+        r = DATA_START_ROW
+        while True:
+            row_vals = {}
+            for dest, col in dest_to_col.items():
+                row_vals[dest] = "" if col is None else best_ws.cell(r, col).value
+            if row_is_empty(list(row_vals.values())):
+                break
+            data.append(row_vals)
+            r += 1
+
+        if not data:
+            raise ValueError("No se detectaron filas de datos (desde la fila 14).")
+
+        # Regla A
+        k_det = "PROCEDIMIENTO / TEMA: DETALLE"
+        k_act = "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR"
+        k_eje = "FECHA: EJECUCIÓN"
+        k_ent1 = "FECHA: ENTREGABLE"
+        k_ent2 = "ENTREGABLES"
+        k_alc = "ALCANCE SEGÚN CONTRATO"
+
+        for i in range(1, len(data)):
+            row = data[i]
+            prev = data[i - 1]
+            if is_blank(row[k_det]) and is_blank(row[k_eje]) and is_blank(row[k_ent1]) and is_blank(row[k_ent2]):
+                row[k_det] = prev[k_det]
+                row[k_eje] = prev[k_eje]
+                row[k_ent1] = prev[k_ent1]
+                row[k_ent2] = prev[k_ent2]
+
+        # Regla B
+        ffill_keys = [k_alc, k_det, k_act]
+        last_vals = {k: None for k in ffill_keys}
+        for row in data:
+            for k in ffill_keys:
+                if is_blank(row[k]):
+                    row[k] = last_vals[k]
+                else:
+                    last_vals[k] = row[k]
+
+        rows = []
+        for row in data:
+            out = {}
+            for dest in MAP_DEST_TO_SRC_ALTS.keys():
+                out[dest] = safe_str(row.get(dest, ""))
+            for k, fn in META.items():
+                out[k] = safe_str(fn())
+            rows.append(out)
+
+        return rows, diag_df, best_ws.title, dest_to_col
+
+    if uploaded:
+        try:
+            rows_to_add, diag_df, sheet_used, dest_to_col = excel_to_rows(uploaded.getvalue())
+
+            st.info(f"Hoja detectada en el Excel: **{sheet_used}**")
+
+            with st.expander("🔍 Encabezados detectados (fila 12/13 combinadas)"):
+                st.dataframe(diag_df, width="stretch", hide_index=True)
+
+            with st.expander("🧭 Mapeo usado (DESTINO en Sheet → columna Excel)"):
+                m = [{"DESTINO (SHEET)": k, "COL_EXCEL": v} for k, v in dest_to_col.items()]
+                st.dataframe(pd.DataFrame(m), width="stretch", hide_index=True)
+
+            st.markdown("**Vista previa (primeras 50 filas)**")
+            prev_df = pd.DataFrame(rows_to_add).fillna("")
+            st.dataframe(prev_df.head(50), width="stretch", hide_index=True)
+            st.caption(f"Filas detectadas para agregar: {len(rows_to_add)}")
+
+            confirm_add = st.checkbox("Confirmo que deseo agregar estas filas al final", key="confirm_add_xlsx_sup2400128")
+
+            if st.button("📥 Agregar filas al Sheet", key="btn_sup2400128_add_xlsx"):
+                if not confirm_add:
+                    st.warning("Activa la confirmación antes de agregar.")
+                    st.stop()
+
+                if str(periodo_up).strip() == "":
+                    st.error("PERIODO es obligatorio.")
+                    st.stop()
+
+                payload = {
+                    "action": "BATCH_ADD",
+                    "sheet": SHEET_NAME_SUP,   # "SUP2400128"
+                    "rows": rows_to_add
+                }
+
+                resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=120)
+                data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+                if data.get("ok"):
+                    st.success(
+                        f"Agregado ✅ Filas: {data.get('added')} | "
+                        f"ID_SUP: {data.get('id_first')}–{data.get('id_last')}"
+                    )
+                    st.rerun()
+                else:
+                    st.error(data)
+
+        except Exception as ex:
+            st.error(f"No se pudo procesar el Excel: {ex}")
+
+    # =========================
+    # TABLA EDITABLE
+    # =========================
+    st.divider()
+    st.subheader("TABLA EDITABLE")
+
+    editable_cols_sup = [c for c in dfsup.columns if c != "ID_SUP"]
+    viewsup = dfsup_f[["ID_SUP"] + editable_cols_sup].copy()
+
+    orig_key_sup = f"orig_sup2400128_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}"
+    if orig_key_sup not in st.session_state:
+        st.session_state[orig_key_sup] = viewsup.copy()
+
+    def _norm_sup(x):
+        if x is None:
+            return ""
+        s = str(x)
+        return "" if s.lower() in ("nan", "none", "null") else s.strip()
+
+    editedsup = st.data_editor(
+        viewsup,
+        width="stretch",
+        hide_index=True,
+        num_rows="fixed",
+        key=f"editor_sup2400128_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}",
+    )
+
+    if st.button("💾 Guardar SUP2400128", key="save_sup2400128"):
+        original = st.session_state[orig_key_sup].copy()
+
+        changed = pd.Series(False, index=editedsup.index)
+        for c in editable_cols_sup:
+            changed |= editedsup[c].map(_norm_sup) != original[c].map(_norm_sup)
+
+        changed_rows = editedsup.loc[changed].copy()
+
+        if changed_rows.empty:
+            st.info("No hay cambios.")
+        else:
+            updates = []
+            for _, r in changed_rows.iterrows():
+                fields = {c: _norm_sup(r[c]) for c in editable_cols_sup}
+                updates.append({"ID": _norm_sup(r["ID_SUP"]), "FIELDS": fields})
+
+            payload = {"action": "BATCH_UPDATE", "sheet": SHEET_NAME_SUP, "updates": updates}
+            resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+            data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+            if data.get("ok"):
+                st.success(f"Guardado ✅ Filas actualizadas: {data.get('updated')} | No encontradas: {data.get('notFound')}")
+                st.session_state[orig_key_sup] = editedsup.copy()
+                st.rerun()
+            else:
+                st.error(data)
+
+    # =========================
+    # BORRAR FILA(S) + VISTA PREVIA (1 / Rango / Lista)
+    # =========================
+    st.divider()
+    st.subheader("BORRAR FILA(S)")
+
+    ids_sup = dfsup["ID_SUP"].dropna().astype(str).str.strip()
+    ids_sup = ids_sup[ids_sup != ""].tolist()
+
+    ids_int = [(_try_int(i), i) for i in ids_sup]
+    if ids_int and all(v[0] is not None for v in ids_int):
+        ids_sup_sorted = [v[1] for v in sorted(ids_int, key=lambda t: t[0])]
+    else:
+        ids_sup_sorted = sorted(ids_sup)
+
+    modo = st.radio(
+        "Modo de borrado",
+        ["Uno", "Rango", "Lista"],
+        horizontal=True,
+        key="del_mode_sup2400128",
+    )
+
+    confirm = st.checkbox("Confirmo borrado irreversible", key="confirm_del_sup2400128")
+
+    def preview_ids(target_ids):
+        target_ids = [str(x).strip() for x in target_ids if str(x).strip() != ""]
+        if not target_ids:
+            return dfsup.head(0)
+
+        dfprev = dfsup.copy()
+        dfprev["ID_SUP"] = dfprev["ID_SUP"].astype(str).str.strip()
+        dfprev = dfprev[dfprev["ID_SUP"].isin(target_ids)]
+
+        tmp = dfprev["ID_SUP"].map(_try_int)
+        if tmp.notna().all() and len(tmp) > 0:
+            dfprev = dfprev.assign(_ord=tmp).sort_values("_ord").drop(columns=["_ord"])
+
+        cols = ["ID_SUP"] + [c for c in dfprev.columns if c != "ID_SUP"]
+        return dfprev[cols]
+
+    def delete_one(id_value: str):
+        payload = {"action": "DELETE", "sheet": SHEET_NAME_SUP, "id": str(id_value)}
+        resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        if not resp.ok:
+            return False, resp.text
+        data = resp.json()
+        return bool(data.get("ok")), data
+
+    if modo == "Uno":
+        id_del = st.selectbox("ID_SUP a borrar", ids_sup_sorted, key="del_one_sup2400128")
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids([id_del])
+        if prev.empty:
+            st.info("No se encontró la fila para ese ID_SUP.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+
+        if st.button("🗑️ Borrar 1", key="btn_del_one_sup2400128"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                ok, data = delete_one(id_del)
+                if ok:
+                    st.success(f"Borrado ✅ ID_SUP={id_del}")
+                    st.rerun()
+                else:
+                    st.error(data)
+
+    elif modo == "Rango":
+        colr1, colr2 = st.columns(2)
+        with colr1:
+            desde = st.text_input("Desde ID_SUP", key="del_range_from_sup2400128")
+        with colr2:
+            hasta = st.text_input("Hasta ID_SUP", key="del_range_to_sup2400128")
+
+        st.caption("Ejemplo: desde 10 hasta 25 (incluye ambos).")
+
+        a = _try_int(desde)
+        b = _try_int(hasta)
+
+        if desde.strip() != "" and hasta.strip() != "" and (a is None or b is None):
+            st.error("Para rango, 'Desde' y 'Hasta' deben ser números (ID_SUP numérico).")
+
+        if a is not None and b is not None:
+            if a > b:
+                a, b = b, a
+
+            target_ids = [str(i) for i in range(a, b + 1)]
+
+            st.markdown("**Vista previa**")
+            prev = preview_ids(target_ids)
+            if prev.empty:
+                st.info("No se encontraron filas dentro del rango en la hoja.")
+            else:
+                st.dataframe(prev, width="stretch", hide_index=True)
+                st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+            if st.button("🗑️ Borrar rango", key="btn_del_range_sup2400128"):
+                if not confirm:
+                    st.warning("Confirma antes de borrar.")
+                else:
+                    borrados = 0
+                    fallos = []
+                    for tid in target_ids:
+                        ok, data = delete_one(tid)
+                        if ok:
+                            borrados += 1
+                        else:
+                            fallos.append((tid, data))
+
+                    if borrados:
+                        st.success(f"Borrado ✅ {borrados} filas.")
+                    if fallos:
+                        st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                        st.write(fallos)
+
+                    st.rerun()
+
+    else:  # Lista
+        ids_texto = st.text_area(
+            "IDs a borrar (separados por coma o salto de línea)",
+            placeholder="Ej: 1,3,7,20\n25\n30",
+            key="del_list_sup2400128",
+        )
+
+        raw = ids_texto.replace("\n", ",")
+        parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+
+        seen = set()
+        target_ids = []
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                target_ids.append(p)
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids(target_ids)
+        if not target_ids:
+            st.info("Ingresa IDs para ver vista previa.")
+        elif prev.empty:
+            st.info("No se encontraron filas con esos IDs en la hoja.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+            st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+        if st.button("🗑️ Borrar lista", key="btn_del_list_sup2400128"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                if not target_ids:
+                    st.error("Ingresa al menos un ID.")
+                    st.stop()
+
+                borrados = 0
+                fallos = []
+                for tid in target_ids:
+                    ok, data = delete_one(tid)
+                    if ok:
+                        borrados += 1
+                    else:
+                        fallos.append((tid, data))
+
+                if borrados:
+                    st.success(f"Borrado ✅ {borrados} filas.")
+                if fallos:
+                    st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                    st.write(fallos)
+
+                st.rerun()
+
+# =========================
+# TAB: SUP2400205 
+# =========================
+with tab_SUP2400205:
+    st.header("Contrato SUP2400205")
+
+    SHEET_NAME_SUP = "SUP2400205"
+
+    # =========================
+    # LEER GOOGLE SHEET (CSV público)
+    # =========================
+    sheet_sup = urllib.parse.quote(SHEET_NAME_SUP)
+    url_sup = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_sup}"
+
+    dfsup = pd.read_csv(url_sup, dtype=str)
+    dfsup.columns = (
+        dfsup.columns.astype(str)
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.upper()
+    )
+    dfsup = dfsup.loc[:, ~dfsup.columns.str.startswith("UNNAMED")]
+
+    if "ID_SUP" not in dfsup.columns:
+        st.error("La hoja 'SUP2400205' debe tener una columna 'ID_SUP' (clave única).")
+        st.stop()
+
+    dfsup["ID_SUP"] = dfsup["ID_SUP"].astype(str).str.strip()
+    dfsup = dfsup[dfsup["ID_SUP"] != ""]
+    dfsup = dfsup.fillna("")
+
+    # =========================
+    # HELPERS
+    # =========================
+    def pick_col(df, candidates):
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    def _try_int(x):
+        try:
+            return int(str(x).strip())
+        except:
+            return None
+
+    def clean_opts(s: pd.Series):
+        s = s.dropna().astype(str).str.strip().replace("", np.nan).dropna()
+        nums = pd.to_numeric(s, errors="coerce")
+        if nums.notna().all() and len(nums) > 0:
+            order = sorted(nums.unique().tolist())
+            out = []
+            for v in order:
+                if float(v).is_integer():
+                    out.append(str(int(v)))
+                else:
+                    out.append(str(v))
+            return out
+        return sorted(s.unique().tolist())
+
+    def _eq(df, col, val):
+        return df[col].astype(str).str.strip() == str(val).strip()
+
+    # =========================
+    # FILTRO (Año, Mes, Periodo, Especialista, Supervisor, Apoyo)
+    # =========================
+    st.subheader("FILTRO")
+
+    col_anio = pick_col(dfsup, ["AÑO", "ANIO", "ANO", "YEAR"])
+    col_mes = pick_col(dfsup, ["MES", "MONTH"])
+    col_periodo = pick_col(dfsup, ["PERIODO", "PERÍODO", "PERIODO.", "PERÍODO."])
+    col_esp = pick_col(dfsup, ["ESPECIALISTA"])
+    col_sup = pick_col(dfsup, ["SUPERVISOR", "NOMBRE COMPLETO DE SUPERVISOR", "NOMBRE COMPLETO DEL SUPERVISOR"])
+    col_apoyo = pick_col(dfsup, ["APOYO"])
+
+    opts_anio = ["TODOS"] + (clean_opts(dfsup[col_anio]) if col_anio else [])
+    opts_mes = ["TODOS"] + (clean_opts(dfsup[col_mes]) if col_mes else [])
+    opts_periodo = ["TODOS"] + (clean_opts(dfsup[col_periodo]) if col_periodo else [])
+    opts_esp = ["TODOS"] + (clean_opts(dfsup[col_esp]) if col_esp else [])
+    opts_sup = ["TODOS"] + (clean_opts(dfsup[col_sup]) if col_sup else [])
+    opts_apoyo = ["TODOS"] + (clean_opts(dfsup[col_apoyo]) if col_apoyo else [])
+
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+
+    with c1:
+        f_anio = st.selectbox("Año", opts_anio, key="f_sup2400205_anio", disabled=(col_anio is None))
+    with c2:
+        f_mes = st.selectbox("Mes", opts_mes, key="f_sup2400205_mes", disabled=(col_mes is None))
+    with c3:
+        f_periodo = st.selectbox("Periodo", opts_periodo, key="f_sup2400205_periodo", disabled=(col_periodo is None))
+
+    with c4:
+        f_esp = st.selectbox("Especialista", opts_esp, key="f_sup2400205_esp", disabled=(col_esp is None))
+    with c5:
+        f_supervisor = st.selectbox("Supervisor", opts_sup, key="f_sup2400205_supervisor", disabled=(col_sup is None))
+    with c6:
+        f_apoyo = st.selectbox("Apoyo", opts_apoyo, key="f_sup2400205_apoyo", disabled=(col_apoyo is None))
+
+    dfsup_f = dfsup.copy()
+    if col_anio and f_anio != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_anio, f_anio)]
+    if col_mes and f_mes != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_mes, f_mes)]
+    if col_periodo and f_periodo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_periodo, f_periodo)]
+    if col_esp and f_esp != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_esp, f_esp)]
+    if col_sup and f_supervisor != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_sup, f_supervisor)]
+    if col_apoyo and f_apoyo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_apoyo, f_apoyo)]
+    
+    # =========================
+    # CARGA DESDE EXCEL (XLSX) -> AGREGA FILAS A SUP2300128
+    # =========================
+    st.divider()
+    st.subheader("CARGAR EXCEL (.xlsx) Y AGREGAR FILAS")
+
+    # INPUTS (meta)
+    anio_up = st.selectbox("AÑO", list(range(2025, 2036)), index=0, key="up_sup2400205_anio")
+    mes_up = st.selectbox(
+        "MES",
+        ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"],
+        key="up_sup2400205_mes",
+    )
+    periodo_up = st.text_input("PERIODO", key="up_sup2400205_periodo")
+
+    CONTRATO_AUTO = "SUP2400205"
+    EST_AUTO = "Vision Quality Energy S.A.C."
+
+    st.text_input("CONTRATO", value=CONTRATO_AUTO, disabled=False, key="up_sup2400205_contrato")
+    st.text_input("EST", value=EST_AUTO, disabled=False, key="up_sup2400205_est")
+
+    uploaded = st.file_uploader("Sube el Excel (.xlsx)", type=["xlsx"], key="up_sup2400205_file")
+    
+    HEADER_ROW_MAIN = 13
+    HEADER_ROW_FALLBACK = 12
+    DATA_START_ROW = 14
+
+    # DESTINO = headers del SHEET (SUP2400205) | ORIGEN = headers del Excel subido
+    MAP_DEST_TO_SRC_ALTS = {
+        "ALCANCE SEGÚN CONTRATO": ["Alcance según contrato"],
+        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema", "Procedimiento / Tema: Detalle", "Detalle"],
+        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Actividad a realizar", "Procedimiento / Tema: Actividad a realizar"],
+        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": [
+            "Unidad operativa a Supervisar / Fiscalizar: Empresa",
+            "Unidad operativa a Supervisar: Agente Supervisado",
+            "Agente Supervisado",
+            "Empresa",
+        ],
+    
+        # Opcionales:
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
+        "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
+        "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
+        "ENTREGABLES": ["Observaciones", "Entregables", "Entregable"],
+        "ESPECIALISTA": ["Especialista"],
+        "SUPERVISOR": ["Supervisor"],
+        "APOYO": ["Apoyo"], 
+    }
+
+    
+    OPTIONAL_DESTS = {
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE",
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO",
+        "FECHA: EJECUCIÓN",
+        "ESPECIALISTA",
+        "SUPERVISOR",
+        "APOYO",
+    }
+    
+    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k not in OPTIONAL_DESTS]
+    
+    META = {
+        "AÑO": lambda: safe_str(anio_up),
+        "MES": lambda: safe_str(mes_up),
+        "PERIODO": lambda: safe_str(periodo_up),
+        "CONTRATO": lambda: CONTRATO_AUTO,
+        "EST": lambda: EST_AUTO,
+    }
+    
+    def excel_to_rows(file_bytes: bytes):
+        wb = load_workbook(BytesIO(file_bytes), data_only=True)
+
+        best_ws = None
+        best_found = None
+        best_score = -1
+        for ws in wb.worksheets:
+            found = build_found(ws)
+            sc = score_sheet(found)
+            if sc > best_score:
+                best_score = sc
+                best_ws = ws
+                best_found = found
+
+        if best_ws is None or best_score < max(4, len(REQUIRED_DESTS) // 2):
+            raise ValueError("No pude identificar la hoja correcta (encabezados no coinciden en ninguna hoja).")
+
+        dest_to_col, missing_required = resolve_columns(best_found)
+        if missing_required:
+            msg = "Faltan encabezados requeridos en el Excel subido:\n"
+            for dest, alts in missing_required:
+                msg += f"- {dest} (busqué: {alts})\n"
+            raise ValueError(msg)
+
+        diag = []
+        for col in range(1, best_ws.max_column + 1):
+            ht = header_text(best_ws, col)
+            if ht:
+                diag.append({"COL": col, "HEADER_DETECTADO": ht})
+        diag_df = pd.DataFrame(diag)
+
+        data = []
+        r = DATA_START_ROW
+        while True:
+            row_vals = {}
+            for dest, col in dest_to_col.items():
+                row_vals[dest] = "" if col is None else best_ws.cell(r, col).value
+            if row_is_empty(list(row_vals.values())):
+                break
+            data.append(row_vals)
+            r += 1
+
+        if not data:
+            raise ValueError("No se detectaron filas de datos (desde la fila 14).")
+
+        # Regla A
+        k_det = "PROCEDIMIENTO / TEMA: DETALLE"
+        k_act = "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR"
+        k_eje = "FECHA: EJECUCIÓN"
+        k_ent1 = "FECHA: ENTREGABLE"
+        k_ent2 = "ENTREGABLES"
+        k_alc = "ALCANCE SEGÚN CONTRATO"
+
+        for i in range(1, len(data)):
+            row = data[i]
+            prev = data[i - 1]
+            if is_blank(row[k_det]) and is_blank(row[k_eje]) and is_blank(row[k_ent1]) and is_blank(row[k_ent2]):
+                row[k_det] = prev[k_det]
+                row[k_eje] = prev[k_eje]
+                row[k_ent1] = prev[k_ent1]
+                row[k_ent2] = prev[k_ent2]
+
+        # Regla B
+        ffill_keys = [k_alc, k_det, k_act]
+        last_vals = {k: None for k in ffill_keys}
+        for row in data:
+            for k in ffill_keys:
+                if is_blank(row[k]):
+                    row[k] = last_vals[k]
+                else:
+                    last_vals[k] = row[k]
+
+        rows = []
+        for row in data:
+            out = {}
+            for dest in MAP_DEST_TO_SRC_ALTS.keys():
+                out[dest] = safe_str(row.get(dest, ""))
+            for k, fn in META.items():
+                out[k] = safe_str(fn())
+            rows.append(out)
+
+        return rows, diag_df, best_ws.title, dest_to_col
+
+    if uploaded:
+        try:
+            rows_to_add, diag_df, sheet_used, dest_to_col = excel_to_rows(uploaded.getvalue())
+
+            st.info(f"Hoja detectada en el Excel: **{sheet_used}**")
+
+            with st.expander("🔍 Encabezados detectados (fila 12/13 combinadas)"):
+                st.dataframe(diag_df, width="stretch", hide_index=True)
+
+            with st.expander("🧭 Mapeo usado (DESTINO en Sheet → columna Excel)"):
+                m = [{"DESTINO (SHEET)": k, "COL_EXCEL": v} for k, v in dest_to_col.items()]
+                st.dataframe(pd.DataFrame(m), width="stretch", hide_index=True)
+
+            st.markdown("**Vista previa (primeras 50 filas)**")
+            prev_df = pd.DataFrame(rows_to_add).fillna("")
+            st.dataframe(prev_df.head(50), width="stretch", hide_index=True)
+            st.caption(f"Filas detectadas para agregar: {len(rows_to_add)}")
+
+            confirm_add = st.checkbox("Confirmo que deseo agregar estas filas al final", key="confirm_add_xlsx_sup2400205")
+
+            if st.button("📥 Agregar filas al Sheet", key="btn_sup2400205_add_xlsx"):
+                if not confirm_add:
+                    st.warning("Activa la confirmación antes de agregar.")
+                    st.stop()
+
+                if str(periodo_up).strip() == "":
+                    st.error("PERIODO es obligatorio.")
+                    st.stop()
+
+                payload = {
+                    "action": "BATCH_ADD",
+                    "sheet": SHEET_NAME_SUP,   # "SUP2400205"
+                    "rows": rows_to_add
+                }
+
+                resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=120)
+                data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+                if data.get("ok"):
+                    st.success(
+                        f"Agregado ✅ Filas: {data.get('added')} | "
+                        f"ID_SUP: {data.get('id_first')}–{data.get('id_last')}"
+                    )
+                    st.rerun()
+                else:
+                    st.error(data)
+
+        except Exception as ex:
+            st.error(f"No se pudo procesar el Excel: {ex}")
+
+    # =========================
+    # TABLA EDITABLE
+    # =========================
+    st.divider()
+    st.subheader("TABLA EDITABLE")
+
+    editable_cols_sup = [c for c in dfsup.columns if c != "ID_SUP"]
+    viewsup = dfsup_f[["ID_SUP"] + editable_cols_sup].copy()
+
+    orig_key_sup = f"orig_sup2400205_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}"
+    if orig_key_sup not in st.session_state:
+        st.session_state[orig_key_sup] = viewsup.copy()
+
+    def _norm_sup(x):
+        if x is None:
+            return ""
+        s = str(x)
+        return "" if s.lower() in ("nan", "none", "null") else s.strip()
+
+    editedsup = st.data_editor(
+        viewsup,
+        width="stretch",
+        hide_index=True,
+        num_rows="fixed",
+        key=f"editor_sup2400205_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}",
+    )
+
+    if st.button("💾 Guardar SUP2400205", key="save_sup2400205"):
+        original = st.session_state[orig_key_sup].copy()
+
+        changed = pd.Series(False, index=editedsup.index)
+        for c in editable_cols_sup:
+            changed |= editedsup[c].map(_norm_sup) != original[c].map(_norm_sup)
+
+        changed_rows = editedsup.loc[changed].copy()
+
+        if changed_rows.empty:
+            st.info("No hay cambios.")
+        else:
+            updates = []
+            for _, r in changed_rows.iterrows():
+                fields = {c: _norm_sup(r[c]) for c in editable_cols_sup}
+                updates.append({"ID": _norm_sup(r["ID_SUP"]), "FIELDS": fields})
+
+            payload = {"action": "BATCH_UPDATE", "sheet": SHEET_NAME_SUP, "updates": updates}
+            resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+            data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+            if data.get("ok"):
+                st.success(f"Guardado ✅ Filas actualizadas: {data.get('updated')} | No encontradas: {data.get('notFound')}")
+                st.session_state[orig_key_sup] = editedsup.copy()
+                st.rerun()
+            else:
+                st.error(data)
+
+    # =========================
+    # BORRAR FILA(S) + VISTA PREVIA (1 / Rango / Lista)
+    # =========================
+    st.divider()
+    st.subheader("BORRAR FILA(S)")
+
+    ids_sup = dfsup["ID_SUP"].dropna().astype(str).str.strip()
+    ids_sup = ids_sup[ids_sup != ""].tolist()
+
+    ids_int = [(_try_int(i), i) for i in ids_sup]
+    if ids_int and all(v[0] is not None for v in ids_int):
+        ids_sup_sorted = [v[1] for v in sorted(ids_int, key=lambda t: t[0])]
+    else:
+        ids_sup_sorted = sorted(ids_sup)
+
+    modo = st.radio(
+        "Modo de borrado",
+        ["Uno", "Rango", "Lista"],
+        horizontal=True,
+        key="del_mode_sup2400205",
+    )
+
+    confirm = st.checkbox("Confirmo borrado irreversible", key="confirm_del_sup2400205")
+
+    def preview_ids(target_ids):
+        target_ids = [str(x).strip() for x in target_ids if str(x).strip() != ""]
+        if not target_ids:
+            return dfsup.head(0)
+
+        dfprev = dfsup.copy()
+        dfprev["ID_SUP"] = dfprev["ID_SUP"].astype(str).str.strip()
+        dfprev = dfprev[dfprev["ID_SUP"].isin(target_ids)]
+
+        tmp = dfprev["ID_SUP"].map(_try_int)
+        if tmp.notna().all() and len(tmp) > 0:
+            dfprev = dfprev.assign(_ord=tmp).sort_values("_ord").drop(columns=["_ord"])
+
+        cols = ["ID_SUP"] + [c for c in dfprev.columns if c != "ID_SUP"]
+        return dfprev[cols]
+
+    def delete_one(id_value: str):
+        payload = {"action": "DELETE", "sheet": SHEET_NAME_SUP, "id": str(id_value)}
+        resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        if not resp.ok:
+            return False, resp.text
+        data = resp.json()
+        return bool(data.get("ok")), data
+
+    if modo == "Uno":
+        id_del = st.selectbox("ID_SUP a borrar", ids_sup_sorted, key="del_one_sup2400205")
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids([id_del])
+        if prev.empty:
+            st.info("No se encontró la fila para ese ID_SUP.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+
+        if st.button("🗑️ Borrar 1", key="btn_del_one_2400205"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                ok, data = delete_one(id_del)
+                if ok:
+                    st.success(f"Borrado ✅ ID_SUP={id_del}")
+                    st.rerun()
+                else:
+                    st.error(data)
+
+    elif modo == "Rango":
+        colr1, colr2 = st.columns(2)
+        with colr1:
+            desde = st.text_input("Desde ID_SUP", key="del_range_from_sup2400205")
+        with colr2:
+            hasta = st.text_input("Hasta ID_SUP", key="del_range_to_sup2400205")
+
+        st.caption("Ejemplo: desde 10 hasta 25 (incluye ambos).")
+
+        a = _try_int(desde)
+        b = _try_int(hasta)
+
+        if desde.strip() != "" and hasta.strip() != "" and (a is None or b is None):
+            st.error("Para rango, 'Desde' y 'Hasta' deben ser números (ID_SUP numérico).")
+
+        if a is not None and b is not None:
+            if a > b:
+                a, b = b, a
+
+            target_ids = [str(i) for i in range(a, b + 1)]
+
+            st.markdown("**Vista previa**")
+            prev = preview_ids(target_ids)
+            if prev.empty:
+                st.info("No se encontraron filas dentro del rango en la hoja.")
+            else:
+                st.dataframe(prev, width="stretch", hide_index=True)
+                st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+            if st.button("🗑️ Borrar rango", key="btn_del_range_sup2400205"):
+                if not confirm:
+                    st.warning("Confirma antes de borrar.")
+                else:
+                    borrados = 0
+                    fallos = []
+                    for tid in target_ids:
+                        ok, data = delete_one(tid)
+                        if ok:
+                            borrados += 1
+                        else:
+                            fallos.append((tid, data))
+
+                    if borrados:
+                        st.success(f"Borrado ✅ {borrados} filas.")
+                    if fallos:
+                        st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                        st.write(fallos)
+
+                    st.rerun()
+
+    else:  # Lista
+        ids_texto = st.text_area(
+            "IDs a borrar (separados por coma o salto de línea)",
+            placeholder="Ej: 1,3,7,20\n25\n30",
+            key="del_list_sup2400205",
+        )
+
+        raw = ids_texto.replace("\n", ",")
+        parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+
+        seen = set()
+        target_ids = []
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                target_ids.append(p)
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids(target_ids)
+        if not target_ids:
+            st.info("Ingresa IDs para ver vista previa.")
+        elif prev.empty:
+            st.info("No se encontraron filas con esos IDs en la hoja.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+            st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+        if st.button("🗑️ Borrar lista", key="btn_del_list_sup2400205"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                if not target_ids:
+                    st.error("Ingresa al menos un ID.")
+                    st.stop()
+
+                borrados = 0
+                fallos = []
+                for tid in target_ids:
+                    ok, data = delete_one(tid)
+                    if ok:
+                        borrados += 1
+                    else:
+                        fallos.append((tid, data))
+
+                if borrados:
+                    st.success(f"Borrado ✅ {borrados} filas.")
+                if fallos:
+                    st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                    st.write(fallos)
+
+                st.rerun()
+                
+# =========================
+# TAB: SUP2500029
+# =========================
+with tab_SUP2500029:
+    st.header("Contrato SUP2500029")
+
+    SHEET_NAME_SUP = "SUP2500029"
+
+    # =========================
+    # LEER GOOGLE SHEET (CSV público)
+    # =========================
+    sheet_sup = urllib.parse.quote(SHEET_NAME_SUP)
+    url_sup = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_sup}"
+
+    dfsup = pd.read_csv(url_sup, dtype=str)
+    dfsup.columns = (
+        dfsup.columns.astype(str)
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.upper()
+    )
+    dfsup = dfsup.loc[:, ~dfsup.columns.str.startswith("UNNAMED")]
+
+    if "ID_SUP" not in dfsup.columns:
+        st.error("La hoja 'SUP2500029' debe tener una columna 'ID_SUP' (clave única).")
+        st.stop()
+
+    dfsup["ID_SUP"] = dfsup["ID_SUP"].astype(str).str.strip()
+    dfsup = dfsup[dfsup["ID_SUP"] != ""]
+    dfsup = dfsup.fillna("")
+
+    # =========================
+    # HELPERS
+    # =========================
+    def pick_col(df, candidates):
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    def _try_int(x):
+        try:
+            return int(str(x).strip())
+        except:
+            return None
+
+    def clean_opts(s: pd.Series):
+        s = s.dropna().astype(str).str.strip().replace("", np.nan).dropna()
+        nums = pd.to_numeric(s, errors="coerce")
+        if nums.notna().all() and len(nums) > 0:
+            order = sorted(nums.unique().tolist())
+            out = []
+            for v in order:
+                if float(v).is_integer():
+                    out.append(str(int(v)))
+                else:
+                    out.append(str(v))
+            return out
+        return sorted(s.unique().tolist())
+
+    def _eq(df, col, val):
+        return df[col].astype(str).str.strip() == str(val).strip()
+
+    # =========================
+    # FILTRO (Año, Mes, Periodo, Especialista, Supervisor, Apoyo)
+    # =========================
+    st.subheader("FILTRO")
+
+    col_anio = pick_col(dfsup, ["AÑO", "ANIO", "ANO", "YEAR"])
+    col_mes = pick_col(dfsup, ["MES", "MONTH"])
+    col_periodo = pick_col(dfsup, ["PERIODO", "PERÍODO", "PERIODO.", "PERÍODO."])
+    col_esp = pick_col(dfsup, ["ESPECIALISTA"])
+    col_sup = pick_col(dfsup, ["SUPERVISOR", "NOMBRE COMPLETO DE SUPERVISOR", "NOMBRE COMPLETO DEL SUPERVISOR"])
+    col_apoyo = pick_col(dfsup, ["APOYO"])
+
+    opts_anio = ["TODOS"] + (clean_opts(dfsup[col_anio]) if col_anio else [])
+    opts_mes = ["TODOS"] + (clean_opts(dfsup[col_mes]) if col_mes else [])
+    opts_periodo = ["TODOS"] + (clean_opts(dfsup[col_periodo]) if col_periodo else [])
+    opts_esp = ["TODOS"] + (clean_opts(dfsup[col_esp]) if col_esp else [])
+    opts_sup = ["TODOS"] + (clean_opts(dfsup[col_sup]) if col_sup else [])
+    opts_apoyo = ["TODOS"] + (clean_opts(dfsup[col_apoyo]) if col_apoyo else [])
+
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+
+    with c1:
+        f_anio = st.selectbox("Año", opts_anio, key="f_sup2500029_anio", disabled=(col_anio is None))
+    with c2:
+        f_mes = st.selectbox("Mes", opts_mes, key="f_sup2500029_mes", disabled=(col_mes is None))
+    with c3:
+        f_periodo = st.selectbox("Periodo", opts_periodo, key="f_sup2500029_periodo", disabled=(col_periodo is None))
+
+    with c4:
+        f_esp = st.selectbox("Especialista", opts_esp, key="f_sup2500029_esp", disabled=(col_esp is None))
+    with c5:
+        f_supervisor = st.selectbox("Supervisor", opts_sup, key="f_sup2500029_supervisor", disabled=(col_sup is None))
+    with c6:
+        f_apoyo = st.selectbox("Apoyo", opts_apoyo, key="f_sup2500029_apoyo", disabled=(col_apoyo is None))
+
+    dfsup_f = dfsup.copy()
+    if col_anio and f_anio != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_anio, f_anio)]
+    if col_mes and f_mes != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_mes, f_mes)]
+    if col_periodo and f_periodo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_periodo, f_periodo)]
+    if col_esp and f_esp != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_esp, f_esp)]
+    if col_sup and f_supervisor != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_sup, f_supervisor)]
+    if col_apoyo and f_apoyo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_apoyo, f_apoyo)]
+    
+    # =========================
+    # CARGA DESDE EXCEL (XLSX) -> AGREGA FILAS A SUP2300128
+    # =========================
+    st.divider()
+    st.subheader("CARGAR EXCEL (.xlsx) Y AGREGAR FILAS")
+
+    # INPUTS (meta)
+    anio_up = st.selectbox("AÑO", list(range(2025, 2036)), index=0, key="up_sup2500029_anio")
+    mes_up = st.selectbox(
+        "MES",
+        ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"],
+        key="up_sup2500029_mes",
+    )
+    periodo_up = st.text_input("PERIODO", key="up_sup2500029_periodo")
+
+    CONTRATO_AUTO = "SUP2500029"
+    EST_AUTO = "VASMOL S.A.C."
+
+    st.text_input("CONTRATO", value=CONTRATO_AUTO, disabled=False, key="up_sup2500029_contrato")
+    st.text_input("EST", value=EST_AUTO, disabled=False, key="up_sup2500029_est")
+
+    uploaded = st.file_uploader("Sube el Excel (.xlsx)", type=["xlsx"], key="up_sup2500029_file")
+    
+    HEADER_ROW_MAIN = 15
+    HEADER_ROW_FALLBACK = 14
+    DATA_START_ROW = 16
+
+    # DESTINO = headers del SHEET (SUP2500029) | ORIGEN = headers del Excel subido
+    MAP_DEST_TO_SRC_ALTS = {
+        "ALCANCE SEGÚN CONTRATO": ["Alcance según contrato"],
+        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema", "Procedimiento / Tema: Detalle", "Detalle"],
+        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Actividad a realizar", "Procedimiento / Tema: Actividad a realizar"],
+        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": [
+            "Unidad operativa a Supervisar / Fiscalizar: Empresa",
+            "Unidad operativa a Supervisar: Agente Supervisado",
+            "Agente Supervisado",
+            "Empresa",
+        ],
+    
+        # Opcionales:
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
+        "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
+        "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
+        "ENTREGABLES": ["Observaciones", "Entregables", "Entregable"],
+        "ESPECIALISTA": ["Especialista"],
+        "SUPERVISOR": ["Supervisor"],
+        "APOYO": ["Apoyo"], 
+    }
+
+    
+    OPTIONAL_DESTS = {
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE",
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO",
+        "FECHA: EJECUCIÓN",
+        "ESPECIALISTA",
+        "SUPERVISOR",
+        "APOYO",
+    }
+    
+    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k not in OPTIONAL_DESTS]
+    
+    META = {
+        "AÑO": lambda: safe_str(anio_up),
+        "MES": lambda: safe_str(mes_up),
+        "PERIODO": lambda: safe_str(periodo_up),
+        "CONTRATO": lambda: CONTRATO_AUTO,
+        "EST": lambda: EST_AUTO,
+    }
+    
+    def excel_to_rows(file_bytes: bytes):
+        wb = load_workbook(BytesIO(file_bytes), data_only=True)
+
+        best_ws = None
+        best_found = None
+        best_score = -1
+        for ws in wb.worksheets:
+            found = build_found(ws)
+            sc = score_sheet(found)
+            if sc > best_score:
+                best_score = sc
+                best_ws = ws
+                best_found = found
+
+        if best_ws is None or best_score < max(4, len(REQUIRED_DESTS) // 2):
+            raise ValueError("No pude identificar la hoja correcta (encabezados no coinciden en ninguna hoja).")
+
+        dest_to_col, missing_required = resolve_columns(best_found)
+        if missing_required:
+            msg = "Faltan encabezados requeridos en el Excel subido:\n"
+            for dest, alts in missing_required:
+                msg += f"- {dest} (busqué: {alts})\n"
+            raise ValueError(msg)
+
+        diag = []
+        for col in range(1, best_ws.max_column + 1):
+            ht = header_text(best_ws, col)
+            if ht:
+                diag.append({"COL": col, "HEADER_DETECTADO": ht})
+        diag_df = pd.DataFrame(diag)
+
+        data = []
+        r = DATA_START_ROW
+        while True:
+            row_vals = {}
+            for dest, col in dest_to_col.items():
+                row_vals[dest] = "" if col is None else best_ws.cell(r, col).value
+            if row_is_empty(list(row_vals.values())):
+                break
+            data.append(row_vals)
+            r += 1
+
+        if not data:
+            raise ValueError("No se detectaron filas de datos (desde la fila 16).")
+
+        # Regla A
+        k_det = "PROCEDIMIENTO / TEMA: DETALLE"
+        k_act = "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR"
+        k_eje = "FECHA: EJECUCIÓN"
+        k_ent1 = "FECHA: ENTREGABLE"
+        k_ent2 = "ENTREGABLES"
+        k_alc = "ALCANCE SEGÚN CONTRATO"
+
+        for i in range(1, len(data)):
+            row = data[i]
+            prev = data[i - 1]
+            if is_blank(row[k_det]) and is_blank(row[k_eje]) and is_blank(row[k_ent1]) and is_blank(row[k_ent2]):
+                row[k_det] = prev[k_det]
+                row[k_eje] = prev[k_eje]
+                row[k_ent1] = prev[k_ent1]
+                row[k_ent2] = prev[k_ent2]
+
+        # Regla B
+        ffill_keys = [k_alc, k_det, k_act]
+        last_vals = {k: None for k in ffill_keys}
+        for row in data:
+            for k in ffill_keys:
+                if is_blank(row[k]):
+                    row[k] = last_vals[k]
+                else:
+                    last_vals[k] = row[k]
+
+        rows = []
+        for row in data:
+            out = {}
+            for dest in MAP_DEST_TO_SRC_ALTS.keys():
+                out[dest] = safe_str(row.get(dest, ""))
+            for k, fn in META.items():
+                out[k] = safe_str(fn())
+            rows.append(out)
+
+        return rows, diag_df, best_ws.title, dest_to_col
+
+    if uploaded:
+        try:
+            rows_to_add, diag_df, sheet_used, dest_to_col = excel_to_rows(uploaded.getvalue())
+
+            st.info(f"Hoja detectada en el Excel: **{sheet_used}**")
+
+            with st.expander("🔍 Encabezados detectados (fila 14/15 combinadas)"):
+                st.dataframe(diag_df, width="stretch", hide_index=True)
+
+            with st.expander("🧭 Mapeo usado (DESTINO en Sheet → columna Excel)"):
+                m = [{"DESTINO (SHEET)": k, "COL_EXCEL": v} for k, v in dest_to_col.items()]
+                st.dataframe(pd.DataFrame(m), width="stretch", hide_index=True)
+
+            st.markdown("**Vista previa (primeras 50 filas)**")
+            prev_df = pd.DataFrame(rows_to_add).fillna("")
+            st.dataframe(prev_df.head(50), width="stretch", hide_index=True)
+            st.caption(f"Filas detectadas para agregar: {len(rows_to_add)}")
+
+            confirm_add = st.checkbox("Confirmo que deseo agregar estas filas al final", key="confirm_add_xlsx_sup2500029")
+
+            if st.button("📥 Agregar filas al Sheet", key="btn_sup2500029_add_xlsx"):
+                if not confirm_add:
+                    st.warning("Activa la confirmación antes de agregar.")
+                    st.stop()
+
+                if str(periodo_up).strip() == "":
+                    st.error("PERIODO es obligatorio.")
+                    st.stop()
+
+                payload = {
+                    "action": "BATCH_ADD",
+                    "sheet": SHEET_NAME_SUP,   # "SUP2500029"
+                    "rows": rows_to_add
+                }
+
+                resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=120)
+                data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+                if data.get("ok"):
+                    st.success(
+                        f"Agregado ✅ Filas: {data.get('added')} | "
+                        f"ID_SUP: {data.get('id_first')}–{data.get('id_last')}"
+                    )
+                    st.rerun()
+                else:
+                    st.error(data)
+
+        except Exception as ex:
+            st.error(f"No se pudo procesar el Excel: {ex}")
+
+    # =========================
+    # TABLA EDITABLE
+    # =========================
+    st.divider()
+    st.subheader("TABLA EDITABLE")
+
+    editable_cols_sup = [c for c in dfsup.columns if c != "ID_SUP"]
+    viewsup = dfsup_f[["ID_SUP"] + editable_cols_sup].copy()
+
+    orig_key_sup = f"orig_sup2500029_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}"
+    if orig_key_sup not in st.session_state:
+        st.session_state[orig_key_sup] = viewsup.copy()
+
+    def _norm_sup(x):
+        if x is None:
+            return ""
+        s = str(x)
+        return "" if s.lower() in ("nan", "none", "null") else s.strip()
+
+    editedsup = st.data_editor(
+        viewsup,
+        width="stretch",
+        hide_index=True,
+        num_rows="fixed",
+        key=f"editor_sup2500029_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}",
+    )
+
+    if st.button("💾 Guardar SUP2500029", key="save_sup2500029"):
+        original = st.session_state[orig_key_sup].copy()
+
+        changed = pd.Series(False, index=editedsup.index)
+        for c in editable_cols_sup:
+            changed |= editedsup[c].map(_norm_sup) != original[c].map(_norm_sup)
+
+        changed_rows = editedsup.loc[changed].copy()
+
+        if changed_rows.empty:
+            st.info("No hay cambios.")
+        else:
+            updates = []
+            for _, r in changed_rows.iterrows():
+                fields = {c: _norm_sup(r[c]) for c in editable_cols_sup}
+                updates.append({"ID": _norm_sup(r["ID_SUP"]), "FIELDS": fields})
+
+            payload = {"action": "BATCH_UPDATE", "sheet": SHEET_NAME_SUP, "updates": updates}
+            resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+            data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+            if data.get("ok"):
+                st.success(f"Guardado ✅ Filas actualizadas: {data.get('updated')} | No encontradas: {data.get('notFound')}")
+                st.session_state[orig_key_sup] = editedsup.copy()
+                st.rerun()
+            else:
+                st.error(data)
+
+    # =========================
+    # BORRAR FILA(S) + VISTA PREVIA (1 / Rango / Lista)
+    # =========================
+    st.divider()
+    st.subheader("BORRAR FILA(S)")
+
+    ids_sup = dfsup["ID_SUP"].dropna().astype(str).str.strip()
+    ids_sup = ids_sup[ids_sup != ""].tolist()
+
+    ids_int = [(_try_int(i), i) for i in ids_sup]
+    if ids_int and all(v[0] is not None for v in ids_int):
+        ids_sup_sorted = [v[1] for v in sorted(ids_int, key=lambda t: t[0])]
+    else:
+        ids_sup_sorted = sorted(ids_sup)
+
+    modo = st.radio(
+        "Modo de borrado",
+        ["Uno", "Rango", "Lista"],
+        horizontal=True,
+        key="del_mode_sup2500029",
+    )
+
+    confirm = st.checkbox("Confirmo borrado irreversible", key="confirm_del_sup2500029")
+
+    def preview_ids(target_ids):
+        target_ids = [str(x).strip() for x in target_ids if str(x).strip() != ""]
+        if not target_ids:
+            return dfsup.head(0)
+
+        dfprev = dfsup.copy()
+        dfprev["ID_SUP"] = dfprev["ID_SUP"].astype(str).str.strip()
+        dfprev = dfprev[dfprev["ID_SUP"].isin(target_ids)]
+
+        tmp = dfprev["ID_SUP"].map(_try_int)
+        if tmp.notna().all() and len(tmp) > 0:
+            dfprev = dfprev.assign(_ord=tmp).sort_values("_ord").drop(columns=["_ord"])
+
+        cols = ["ID_SUP"] + [c for c in dfprev.columns if c != "ID_SUP"]
+        return dfprev[cols]
+
+    def delete_one(id_value: str):
+        payload = {"action": "DELETE", "sheet": SHEET_NAME_SUP, "id": str(id_value)}
+        resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        if not resp.ok:
+            return False, resp.text
+        data = resp.json()
+        return bool(data.get("ok")), data
+
+    if modo == "Uno":
+        id_del = st.selectbox("ID_SUP a borrar", ids_sup_sorted, key="del_one_sup2500029")
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids([id_del])
+        if prev.empty:
+            st.info("No se encontró la fila para ese ID_SUP.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+
+        if st.button("🗑️ Borrar 1", key="btn_del_one_2500029"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                ok, data = delete_one(id_del)
+                if ok:
+                    st.success(f"Borrado ✅ ID_SUP={id_del}")
+                    st.rerun()
+                else:
+                    st.error(data)
+
+    elif modo == "Rango":
+        colr1, colr2 = st.columns(2)
+        with colr1:
+            desde = st.text_input("Desde ID_SUP", key="del_range_from_sup2500029")
+        with colr2:
+            hasta = st.text_input("Hasta ID_SUP", key="del_range_to_sup2500029")
+
+        st.caption("Ejemplo: desde 10 hasta 25 (incluye ambos).")
+
+        a = _try_int(desde)
+        b = _try_int(hasta)
+
+        if desde.strip() != "" and hasta.strip() != "" and (a is None or b is None):
+            st.error("Para rango, 'Desde' y 'Hasta' deben ser números (ID_SUP numérico).")
+
+        if a is not None and b is not None:
+            if a > b:
+                a, b = b, a
+
+            target_ids = [str(i) for i in range(a, b + 1)]
+
+            st.markdown("**Vista previa**")
+            prev = preview_ids(target_ids)
+            if prev.empty:
+                st.info("No se encontraron filas dentro del rango en la hoja.")
+            else:
+                st.dataframe(prev, width="stretch", hide_index=True)
+                st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+            if st.button("🗑️ Borrar rango", key="btn_del_range_sup2500029"):
+                if not confirm:
+                    st.warning("Confirma antes de borrar.")
+                else:
+                    borrados = 0
+                    fallos = []
+                    for tid in target_ids:
+                        ok, data = delete_one(tid)
+                        if ok:
+                            borrados += 1
+                        else:
+                            fallos.append((tid, data))
+
+                    if borrados:
+                        st.success(f"Borrado ✅ {borrados} filas.")
+                    if fallos:
+                        st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                        st.write(fallos)
+
+                    st.rerun()
+
+    else:  # Lista
+        ids_texto = st.text_area(
+            "IDs a borrar (separados por coma o salto de línea)",
+            placeholder="Ej: 1,3,7,20\n25\n30",
+            key="del_list_sup2500029",
+        )
+
+        raw = ids_texto.replace("\n", ",")
+        parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+
+        seen = set()
+        target_ids = []
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                target_ids.append(p)
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids(target_ids)
+        if not target_ids:
+            st.info("Ingresa IDs para ver vista previa.")
+        elif prev.empty:
+            st.info("No se encontraron filas con esos IDs en la hoja.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+            st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+        if st.button("🗑️ Borrar lista", key="btn_del_list_sup2500029"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                if not target_ids:
+                    st.error("Ingresa al menos un ID.")
+                    st.stop()
+
+                borrados = 0
+                fallos = []
+                for tid in target_ids:
+                    ok, data = delete_one(tid)
+                    if ok:
+                        borrados += 1
+                    else:
+                        fallos.append((tid, data))
+
+                if borrados:
+                    st.success(f"Borrado ✅ {borrados} filas.")
+                if fallos:
+                    st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                    st.write(fallos)
+
+                st.rerun()
+                
+# =========================
+# TAB: SUP2400028
+# =========================
+with tab_SUP2400028:
+    st.header("Contrato SUP2400028")
+
+    SHEET_NAME_SUP = "SUP2400028"
+
+    # =========================
+    # LEER GOOGLE SHEET (CSV público)
+    # =========================
+    sheet_sup = urllib.parse.quote(SHEET_NAME_SUP)
+    url_sup = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv&sheet={sheet_sup}"
+
+    dfsup = pd.read_csv(url_sup, dtype=str)
+    dfsup.columns = (
+        dfsup.columns.astype(str)
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.upper()
+    )
+    dfsup = dfsup.loc[:, ~dfsup.columns.str.startswith("UNNAMED")]
+
+    if "ID_SUP" not in dfsup.columns:
+        st.error("La hoja 'SUP2400028' debe tener una columna 'ID_SUP' (clave única).")
+        st.stop()
+
+    dfsup["ID_SUP"] = dfsup["ID_SUP"].astype(str).str.strip()
+    dfsup = dfsup[dfsup["ID_SUP"] != ""]
+    dfsup = dfsup.fillna("")
+
+    # =========================
+    # HELPERS
+    # =========================
+    def pick_col(df, candidates):
+        cols = set(df.columns)
+        for c in candidates:
+            if c in cols:
+                return c
+        return None
+
+    def _try_int(x):
+        try:
+            return int(str(x).strip())
+        except:
+            return None
+
+    def clean_opts(s: pd.Series):
+        s = s.dropna().astype(str).str.strip().replace("", np.nan).dropna()
+        nums = pd.to_numeric(s, errors="coerce")
+        if nums.notna().all() and len(nums) > 0:
+            order = sorted(nums.unique().tolist())
+            out = []
+            for v in order:
+                if float(v).is_integer():
+                    out.append(str(int(v)))
+                else:
+                    out.append(str(v))
+            return out
+        return sorted(s.unique().tolist())
+
+    def _eq(df, col, val):
+        return df[col].astype(str).str.strip() == str(val).strip()
+
+    # =========================
+    # FILTRO (Año, Mes, Periodo, Especialista, Supervisor, Apoyo)
+    # =========================
+    st.subheader("FILTRO")
+
+    col_anio = pick_col(dfsup, ["AÑO", "ANIO", "ANO", "YEAR"])
+    col_mes = pick_col(dfsup, ["MES", "MONTH"])
+    col_periodo = pick_col(dfsup, ["PERIODO", "PERÍODO", "PERIODO.", "PERÍODO."])
+    col_esp = pick_col(dfsup, ["ESPECIALISTA"])
+    col_sup = pick_col(dfsup, ["SUPERVISOR", "NOMBRE COMPLETO DE SUPERVISOR", "NOMBRE COMPLETO DEL SUPERVISOR"])
+    col_apoyo = pick_col(dfsup, ["APOYO"])
+
+    opts_anio = ["TODOS"] + (clean_opts(dfsup[col_anio]) if col_anio else [])
+    opts_mes = ["TODOS"] + (clean_opts(dfsup[col_mes]) if col_mes else [])
+    opts_periodo = ["TODOS"] + (clean_opts(dfsup[col_periodo]) if col_periodo else [])
+    opts_esp = ["TODOS"] + (clean_opts(dfsup[col_esp]) if col_esp else [])
+    opts_sup = ["TODOS"] + (clean_opts(dfsup[col_sup]) if col_sup else [])
+    opts_apoyo = ["TODOS"] + (clean_opts(dfsup[col_apoyo]) if col_apoyo else [])
+
+    c1, c2, c3 = st.columns(3)
+    c4, c5, c6 = st.columns(3)
+
+    with c1:
+        f_anio = st.selectbox("Año", opts_anio, key="f_sup2400028_anio", disabled=(col_anio is None))
+    with c2:
+        f_mes = st.selectbox("Mes", opts_mes, key="f_sup2400028_mes", disabled=(col_mes is None))
+    with c3:
+        f_periodo = st.selectbox("Periodo", opts_periodo, key="f_sup2400028_periodo", disabled=(col_periodo is None))
+
+    with c4:
+        f_esp = st.selectbox("Especialista", opts_esp, key="f_sup2400028_esp", disabled=(col_esp is None))
+    with c5:
+        f_supervisor = st.selectbox("Supervisor", opts_sup, key="f_sup2400028_supervisor", disabled=(col_sup is None))
+    with c6:
+        f_apoyo = st.selectbox("Apoyo", opts_apoyo, key="f_sup2400028_apoyo", disabled=(col_apoyo is None))
+
+    dfsup_f = dfsup.copy()
+    if col_anio and f_anio != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_anio, f_anio)]
+    if col_mes and f_mes != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_mes, f_mes)]
+    if col_periodo and f_periodo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_periodo, f_periodo)]
+    if col_esp and f_esp != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_esp, f_esp)]
+    if col_sup and f_supervisor != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_sup, f_supervisor)]
+    if col_apoyo and f_apoyo != "TODOS":
+        dfsup_f = dfsup_f[_eq(dfsup_f, col_apoyo, f_apoyo)]
+    
+    # =========================
+    # CARGA DESDE EXCEL (XLSX) -> AGREGA FILAS A SUP2300128
+    # =========================
+    st.divider()
+    st.subheader("CARGAR EXCEL (.xlsx) Y AGREGAR FILAS")
+
+    # INPUTS (meta)
+    anio_up = st.selectbox("AÑO", list(range(2025, 2036)), index=0, key="up_sup2400028_anio")
+    mes_up = st.selectbox(
+        "MES",
+        ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO","JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"],
+        key="up_sup2400028_mes",
+    )
+    periodo_up = st.text_input("PERIODO", key="up_sup2400028_periodo")
+
+    CONTRATO_AUTO = "SUP2400028"
+    EST_AUTO = "SEOUL INSPECTION AND TESTING CO. LTD. SUCURSAL DEL PERU"
+
+    st.text_input("CONTRATO", value=CONTRATO_AUTO, disabled=False, key="up_sup2400028_contrato")
+    st.text_input("EST", value=EST_AUTO, disabled=False, key="up_sup2400028_est")
+
+    uploaded = st.file_uploader("Sube el Excel (.xlsx)", type=["xlsx"], key="up_sup2400028_file")
+    
+    HEADER_ROW_MAIN = 16
+    HEADER_ROW_FALLBACK = 15
+    DATA_START_ROW = 17
+
+    # DESTINO = headers del SHEET (SUP2400028) | ORIGEN = headers del Excel subido
+    MAP_DEST_TO_SRC_ALTS = {
+        "ALCANCE SEGÚN CONTRATO": ["Alcance según contrato"],
+        "PROCEDIMIENTO / TEMA: DETALLE": ["Procedimiento / Tema", "Procedimiento / Tema: Detalle", "Detalle"],
+        "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR": ["Actividad a realizar", "Procedimiento / Tema: Actividad a realizar"],
+        "UNIDAD OPERATIVA A SUPERVISAR: AGENTE SUPERVISADO": [
+            "Unidad operativa a Supervisar / Fiscalizar: Empresa",
+            "Unidad operativa a Supervisar: Agente Supervisado",
+            "Agente Supervisado",
+            "Empresa",
+        ],
+    
+        # Opcionales:
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
+        "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
+        "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
+        "ENTREGABLES": ["Observaciones", "Entregables", "Entregable"],
+        "ESPECIALISTA": ["Especialista"],
+        "SUPERVISOR": ["Supervisor"],
+        "APOYO": ["Apoyo"], 
+    }
+
+    
+    OPTIONAL_DESTS = {
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE",
+        "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO",
+        "FECHA: EJECUCIÓN",
+        "ESPECIALISTA",
+        "SUPERVISOR",
+        "APOYO",
+    }
+    
+    REQUIRED_DESTS = [k for k in MAP_DEST_TO_SRC_ALTS.keys() if k not in OPTIONAL_DESTS]
+    
+    META = {
+        "AÑO": lambda: safe_str(anio_up),
+        "MES": lambda: safe_str(mes_up),
+        "PERIODO": lambda: safe_str(periodo_up),
+        "CONTRATO": lambda: CONTRATO_AUTO,
+        "EST": lambda: EST_AUTO,
+    }
+    
+    def excel_to_rows(file_bytes: bytes):
+        wb = load_workbook(BytesIO(file_bytes), data_only=True)
+
+        best_ws = None
+        best_found = None
+        best_score = -1
+        for ws in wb.worksheets:
+            found = build_found(ws)
+            sc = score_sheet(found)
+            if sc > best_score:
+                best_score = sc
+                best_ws = ws
+                best_found = found
+
+        if best_ws is None or best_score < max(4, len(REQUIRED_DESTS) // 2):
+            raise ValueError("No pude identificar la hoja correcta (encabezados no coinciden en ninguna hoja).")
+
+        dest_to_col, missing_required = resolve_columns(best_found)
+        if missing_required:
+            msg = "Faltan encabezados requeridos en el Excel subido:\n"
+            for dest, alts in missing_required:
+                msg += f"- {dest} (busqué: {alts})\n"
+            raise ValueError(msg)
+
+        diag = []
+        for col in range(1, best_ws.max_column + 1):
+            ht = header_text(best_ws, col)
+            if ht:
+                diag.append({"COL": col, "HEADER_DETECTADO": ht})
+        diag_df = pd.DataFrame(diag)
+
+        data = []
+        r = DATA_START_ROW
+        while True:
+            row_vals = {}
+            for dest, col in dest_to_col.items():
+                row_vals[dest] = "" if col is None else best_ws.cell(r, col).value
+            if row_is_empty(list(row_vals.values())):
+                break
+            data.append(row_vals)
+            r += 1
+
+        if not data:
+            raise ValueError("No se detectaron filas de datos (desde la fila 17).")
+
+        # Regla A
+        k_det = "PROCEDIMIENTO / TEMA: DETALLE"
+        k_act = "PROCEDIMIENTO / TEMA: ACTIVIDAD A REALIZAR"
+        k_eje = "FECHA: EJECUCIÓN"
+        k_ent1 = "FECHA: ENTREGABLE"
+        k_ent2 = "ENTREGABLES"
+        k_alc = "ALCANCE SEGÚN CONTRATO"
+
+        for i in range(1, len(data)):
+            row = data[i]
+            prev = data[i - 1]
+            if is_blank(row[k_det]) and is_blank(row[k_eje]) and is_blank(row[k_ent1]) and is_blank(row[k_ent2]):
+                row[k_det] = prev[k_det]
+                row[k_eje] = prev[k_eje]
+                row[k_ent1] = prev[k_ent1]
+                row[k_ent2] = prev[k_ent2]
+
+        # Regla B
+        ffill_keys = [k_alc, k_det, k_act]
+        last_vals = {k: None for k in ffill_keys}
+        for row in data:
+            for k in ffill_keys:
+                if is_blank(row[k]):
+                    row[k] = last_vals[k]
+                else:
+                    last_vals[k] = row[k]
+
+        rows = []
+        for row in data:
+            out = {}
+            for dest in MAP_DEST_TO_SRC_ALTS.keys():
+                out[dest] = safe_str(row.get(dest, ""))
+            for k, fn in META.items():
+                out[k] = safe_str(fn())
+            rows.append(out)
+
+        return rows, diag_df, best_ws.title, dest_to_col
+
+    if uploaded:
+        try:
+            rows_to_add, diag_df, sheet_used, dest_to_col = excel_to_rows(uploaded.getvalue())
+
+            st.info(f"Hoja detectada en el Excel: **{sheet_used}**")
+
+            with st.expander("🔍 Encabezados detectados (fila 15/16 combinadas)"):
+                st.dataframe(diag_df, width="stretch", hide_index=True)
+
+            with st.expander("🧭 Mapeo usado (DESTINO en Sheet → columna Excel)"):
+                m = [{"DESTINO (SHEET)": k, "COL_EXCEL": v} for k, v in dest_to_col.items()]
+                st.dataframe(pd.DataFrame(m), width="stretch", hide_index=True)
+
+            st.markdown("**Vista previa (primeras 50 filas)**")
+            prev_df = pd.DataFrame(rows_to_add).fillna("")
+            st.dataframe(prev_df.head(50), width="stretch", hide_index=True)
+            st.caption(f"Filas detectadas para agregar: {len(rows_to_add)}")
+
+            confirm_add = st.checkbox("Confirmo que deseo agregar estas filas al final", key="confirm_add_xlsx_sup2400028")
+
+            if st.button("📥 Agregar filas al Sheet", key="btn_sup2400028_add_xlsx"):
+                if not confirm_add:
+                    st.warning("Activa la confirmación antes de agregar.")
+                    st.stop()
+
+                if str(periodo_up).strip() == "":
+                    st.error("PERIODO es obligatorio.")
+                    st.stop()
+
+                payload = {
+                    "action": "BATCH_ADD",
+                    "sheet": SHEET_NAME_SUP,   # "SUP2400028"
+                    "rows": rows_to_add
+                }
+
+                resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=120)
+                data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+                if data.get("ok"):
+                    st.success(
+                        f"Agregado ✅ Filas: {data.get('added')} | "
+                        f"ID_SUP: {data.get('id_first')}–{data.get('id_last')}"
+                    )
+                    st.rerun()
+                else:
+                    st.error(data)
+
+        except Exception as ex:
+            st.error(f"No se pudo procesar el Excel: {ex}")
+
+    # =========================
+    # TABLA EDITABLE
+    # =========================
+    st.divider()
+    st.subheader("TABLA EDITABLE")
+
+    editable_cols_sup = [c for c in dfsup.columns if c != "ID_SUP"]
+    viewsup = dfsup_f[["ID_SUP"] + editable_cols_sup].copy()
+
+    orig_key_sup = f"orig_sup2400028_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}"
+    if orig_key_sup not in st.session_state:
+        st.session_state[orig_key_sup] = viewsup.copy()
+
+    def _norm_sup(x):
+        if x is None:
+            return ""
+        s = str(x)
+        return "" if s.lower() in ("nan", "none", "null") else s.strip()
+
+    editedsup = st.data_editor(
+        viewsup,
+        width="stretch",
+        hide_index=True,
+        num_rows="fixed",
+        key=f"editor_sup2400028_{f_anio}_{f_mes}_{f_periodo}_{f_esp}_{f_supervisor}_{f_apoyo}",
+    )
+
+    if st.button("💾 Guardar SUP2400028", key="save_sup2400028"):
+        original = st.session_state[orig_key_sup].copy()
+
+        changed = pd.Series(False, index=editedsup.index)
+        for c in editable_cols_sup:
+            changed |= editedsup[c].map(_norm_sup) != original[c].map(_norm_sup)
+
+        changed_rows = editedsup.loc[changed].copy()
+
+        if changed_rows.empty:
+            st.info("No hay cambios.")
+        else:
+            updates = []
+            for _, r in changed_rows.iterrows():
+                fields = {c: _norm_sup(r[c]) for c in editable_cols_sup}
+                updates.append({"ID": _norm_sup(r["ID_SUP"]), "FIELDS": fields})
+
+            payload = {"action": "BATCH_UPDATE", "sheet": SHEET_NAME_SUP, "updates": updates}
+            resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+            data = resp.json() if resp.ok else {"ok": False, "error": resp.text}
+
+            if data.get("ok"):
+                st.success(f"Guardado ✅ Filas actualizadas: {data.get('updated')} | No encontradas: {data.get('notFound')}")
+                st.session_state[orig_key_sup] = editedsup.copy()
+                st.rerun()
+            else:
+                st.error(data)
+
+    # =========================
+    # BORRAR FILA(S) + VISTA PREVIA (1 / Rango / Lista)
+    # =========================
+    st.divider()
+    st.subheader("BORRAR FILA(S)")
+
+    ids_sup = dfsup["ID_SUP"].dropna().astype(str).str.strip()
+    ids_sup = ids_sup[ids_sup != ""].tolist()
+
+    ids_int = [(_try_int(i), i) for i in ids_sup]
+    if ids_int and all(v[0] is not None for v in ids_int):
+        ids_sup_sorted = [v[1] for v in sorted(ids_int, key=lambda t: t[0])]
+    else:
+        ids_sup_sorted = sorted(ids_sup)
+
+    modo = st.radio(
+        "Modo de borrado",
+        ["Uno", "Rango", "Lista"],
+        horizontal=True,
+        key="del_mode_sup2400028",
+    )
+
+    confirm = st.checkbox("Confirmo borrado irreversible", key="confirm_del_sup2400028")
+
+    def preview_ids(target_ids):
+        target_ids = [str(x).strip() for x in target_ids if str(x).strip() != ""]
+        if not target_ids:
+            return dfsup.head(0)
+
+        dfprev = dfsup.copy()
+        dfprev["ID_SUP"] = dfprev["ID_SUP"].astype(str).str.strip()
+        dfprev = dfprev[dfprev["ID_SUP"].isin(target_ids)]
+
+        tmp = dfprev["ID_SUP"].map(_try_int)
+        if tmp.notna().all() and len(tmp) > 0:
+            dfprev = dfprev.assign(_ord=tmp).sort_values("_ord").drop(columns=["_ord"])
+
+        cols = ["ID_SUP"] + [c for c in dfprev.columns if c != "ID_SUP"]
+        return dfprev[cols]
+
+    def delete_one(id_value: str):
+        payload = {"action": "DELETE", "sheet": SHEET_NAME_SUP, "id": str(id_value)}
+        resp = requests.post(APPS_SCRIPT_URL, json=payload, timeout=30)
+        if not resp.ok:
+            return False, resp.text
+        data = resp.json()
+        return bool(data.get("ok")), data
+
+    if modo == "Uno":
+        id_del = st.selectbox("ID_SUP a borrar", ids_sup_sorted, key="del_one_sup2400028")
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids([id_del])
+        if prev.empty:
+            st.info("No se encontró la fila para ese ID_SUP.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+
+        if st.button("🗑️ Borrar 1", key="btn_del_one_2400028"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                ok, data = delete_one(id_del)
+                if ok:
+                    st.success(f"Borrado ✅ ID_SUP={id_del}")
+                    st.rerun()
+                else:
+                    st.error(data)
+
+    elif modo == "Rango":
+        colr1, colr2 = st.columns(2)
+        with colr1:
+            desde = st.text_input("Desde ID_SUP", key="del_range_from_sup2400028")
+        with colr2:
+            hasta = st.text_input("Hasta ID_SUP", key="del_range_to_sup2400028")
+
+        st.caption("Ejemplo: desde 10 hasta 25 (incluye ambos).")
+
+        a = _try_int(desde)
+        b = _try_int(hasta)
+
+        if desde.strip() != "" and hasta.strip() != "" and (a is None or b is None):
+            st.error("Para rango, 'Desde' y 'Hasta' deben ser números (ID_SUP numérico).")
+
+        if a is not None and b is not None:
+            if a > b:
+                a, b = b, a
+
+            target_ids = [str(i) for i in range(a, b + 1)]
+
+            st.markdown("**Vista previa**")
+            prev = preview_ids(target_ids)
+            if prev.empty:
+                st.info("No se encontraron filas dentro del rango en la hoja.")
+            else:
+                st.dataframe(prev, width="stretch", hide_index=True)
+                st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+            if st.button("🗑️ Borrar rango", key="btn_del_range_sup2400028"):
+                if not confirm:
+                    st.warning("Confirma antes de borrar.")
+                else:
+                    borrados = 0
+                    fallos = []
+                    for tid in target_ids:
+                        ok, data = delete_one(tid)
+                        if ok:
+                            borrados += 1
+                        else:
+                            fallos.append((tid, data))
+
+                    if borrados:
+                        st.success(f"Borrado ✅ {borrados} filas.")
+                    if fallos:
+                        st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                        st.write(fallos)
+
+                    st.rerun()
+
+    else:  # Lista
+        ids_texto = st.text_area(
+            "IDs a borrar (separados por coma o salto de línea)",
+            placeholder="Ej: 1,3,7,20\n25\n30",
+            key="del_list_sup2400028",
+        )
+
+        raw = ids_texto.replace("\n", ",")
+        parts = [p.strip() for p in raw.split(",") if p.strip() != ""]
+
+        seen = set()
+        target_ids = []
+        for p in parts:
+            if p not in seen:
+                seen.add(p)
+                target_ids.append(p)
+
+        st.markdown("**Vista previa**")
+        prev = preview_ids(target_ids)
+        if not target_ids:
+            st.info("Ingresa IDs para ver vista previa.")
+        elif prev.empty:
+            st.info("No se encontraron filas con esos IDs en la hoja.")
+        else:
+            st.dataframe(prev, width="stretch", hide_index=True)
+            st.caption(f"Filas encontradas: {len(prev)} (IDs inexistentes se ignorarán).")
+
+        if st.button("🗑️ Borrar lista", key="btn_del_list_sup2400028"):
+            if not confirm:
+                st.warning("Confirma antes de borrar.")
+            else:
+                if not target_ids:
+                    st.error("Ingresa al menos un ID.")
+                    st.stop()
+
+                borrados = 0
+                fallos = []
+                for tid in target_ids:
+                    ok, data = delete_one(tid)
+                    if ok:
+                        borrados += 1
+                    else:
+                        fallos.append((tid, data))
+
+                if borrados:
+                    st.success(f"Borrado ✅ {borrados} filas.")
+                if fallos:
+                    st.warning(f"No se pudieron borrar {len(fallos)} IDs.")
+                    st.write(fallos)
+
+                st.rerun()
+                
