@@ -2985,7 +2985,7 @@ with tab_SUP2400205:
         ],
     
         # Opcionales:
-        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente"],
+        "UNIDAD OPERATIVA A SUPERVISAR: UNIDAD /EXPEDIENTE": ["Unidad operativa a Supervisar: Unidad /Expediente", "Unidad /Expediente", "Unidad / Expediente", "Expediente"],
         "UNIDAD OPERATIVA A SUPERVISAR: UBIGEO": ["Unidad operativa a Supervisar: Ubigeo", "Ubigeo"],
         "FECHA: EJECUCIÓN": ["Fecha: Ejecución", "Ejecución"],
         "FECHA: ENTREGABLE": ["Entrega de Informe", "Fecha: Entregable", "Entregable"],
